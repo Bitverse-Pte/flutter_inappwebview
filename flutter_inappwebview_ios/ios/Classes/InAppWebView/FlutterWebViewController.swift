@@ -187,24 +187,45 @@ public class FlutterWebViewController: NSObject, FlutterPlatformView, Disposable
     
     // method added to fix:
     // https://github.com/pichillilorenzo/flutter_inappwebview/issues/1837
-    public func dispose(removeFromSuperview: Bool) {
-        if keepAliveId == nil {
-            if let webView = webView(), webView.window != nil {
-                webView.dispose()
-                if removeFromSuperview {
-                    webView.removeFromSuperview()
-                }
-            }
-            if removeFromSuperview {
-                myView?.removeFromSuperview()
-            }
-            myView = nil
-        }
-    }
-    
-    public func dispose() {
-        dispose(removeFromSuperview: false)
-    }
+     public func dispose(removeFromSuperview: Bool) {
+           if keepAliveId != nil {
+               return
+           }
+
+           DispatchQueue.main.async { [weak self] in
+               guard let self = self else { return }
+               guard let webView = self.webView() else { return }
+
+               // 1. 停止加载
+               webView.stopLoading()
+
+               // 2. 清理 delegate
+               webView.navigationDelegate = nil
+               webView.uiDelegate = nil
+               webView.scrollView.delegate = nil
+
+               // 3. 移除 JS message handlers（非常重要）
+               let userContentController = webView.configuration.userContentController
+               userContentController.removeAllScriptMessageHandlers()
+
+               // 4. 从父视图移除
+               if removeFromSuperview {
+                   webView.removeFromSuperview()
+                   self.myView?.removeFromSuperview()
+               }
+
+               // 5. 延迟释放（避免 WebKit still in runloop）
+               DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                   webView.dispose()
+               }
+
+               self.myView = nil
+           }
+       }
+
+       public func dispose() {
+   //        dispose(removeFromSuperview: false)
+       }
     
     deinit {
         debugPrint("FlutterWebViewController - dealloc")
